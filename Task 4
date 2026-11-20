@@ -1,0 +1,48 @@
+import csv, random, sqlite3, tempfile, os, time, cProfile
+from collections import defaultdict
+
+def generate_csv(path, stations, seed=7):
+	random.seed(seed)
+	with open(path, "w", newline="", encoding="utf-8") as f:
+		w = csv.writer(f)
+		w.writerow(["station", "day", "hour", "pm25"])
+		for s in range(stations):
+			for i in range(8760):
+				day = f"2022-{(i//24)+1:02d}-{(i%24)+1:02d}"
+				w.writerow([f"S{s+1}", day, i%24, round(random.uniform(5,150),2)])
+
+def python_group(path):
+	groups = defaultdict(lambda: [0,0])
+	with open(path, newline="", encoding="utf-8") as f:
+		for r in csv.DictReader(f):
+			k = (r["station"], r["day"])
+			x = float(r["pm25"]); groups[k][0] += x; groups[k][1] += 1
+	return {k: v[0]/v[1] for k,v in groups.items()}
+
+def pandas_group(path):
+	import pandas as pd
+	return pd.read_csv(path).groupby(["station", "day"])["pm25"].mean().to_dict()
+
+def sqlite_group(path):
+	db = sqlite3.connect(":memory:")
+	db.execute("CREATE TABLE readings(station TEXT, day TEXT, pm25 REAL)")
+	with open(path, newline="", encoding="utf-8") as f:
+		db.executemany("INSERT INTO readings VALUES (?,?,?,?)",
+			((r["station"], r["day"], float(r["pm25"])) for r in csv.DictReader(f)))
+	result = {(r[0], r[1]): r[2] for r in db.execute(
+		"SELECT station, day, AVG(pm25) FROM readings GROUP BY station,day")}
+	db.close(); return result
+
+def benchmark():
+	for n in (1,2,10):
+		fd, path = tempfile.mkstemp(suffix=".csv"); os.close(fd)
+		try:
+			generate_csv(path, n)
+			for name, fn in [("Python", python_group), ("pandas", pandas_group), ("SQLite", sqlite_group)]:
+				start = time.perf_counter(); result = fn(path); elapsed = time.perf_counter()-start
+				print(f"{name}: {elapsed:.4f}s")
+		finally:
+			os.remove(path)
+
+if __name__ == "__main__":
+	benchmark()

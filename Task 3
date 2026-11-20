@@ -1,0 +1,60 @@
+import sqlite3,time,re
+from collections import Counter
+POSITIVE={"good","clean","fast","helpful","improved"}
+NEGATIVE={"bad","dirty","slow","rude","smoke","broken"}
+NEGATORS={"not","never","no"}
+
+def score(text):
+	words=re.sub(r'\W',' ',text.lower()).replace(",","").split()
+	total=0; previous_negator=False
+	for word in words:
+		value=1 if word in POSITIVE else -1 if word in NEGATIVE else 0
+		if value and previous_negator: value=-value
+		total+=value
+		previous_negator=word in NEGATORS
+	return total
+
+def label(text):
+	s=score(text)
+	return "positive" if s>0 else "negative" if s<0 else "neutral"
+
+STOP={"the","is","are","a","an","and","of","to","in","on","was","were"}
+def summarise(textL):
+	sentences=[x.strip() for x in re.split(r"(?<![0-9])\. ",text) if x.strip()]
+	words=re.findall(r"[A-Za-z]+",text.lower())
+	freq=Counter(w for w in words if w not in STOP)
+	ranked=sorted(enumerate(sentences),
+		key=lambda k:-sum(freq[w.lower()] for w in re.findall(r"[A-Za-z]+",k[1]))
+	)
+	return ". ".join(x for s,x in sorted(ranked[:2]))
+
+COMPLAINTS=[
+	"Roads are clean and buses are fast.","Smoke is bad near the factory.",
+	"The response team was not helpful.","Not bad, the air quality improved.",
+	"The road is dirty and traffic is slow.","Please repair the broken air monitor.",
+	"The staff were helpful and polite.","There is smoke near the school.",
+	"The service is good today.","The bus is not fast today."]
+MANUAL=["positive","negative","negative","positive","negative","negative","positive","negative","positive","negative"]
+
+# sqlite3 example:
+db=sqlite3.connect(":memory:")
+db.execute("CREATE TABLE readings(station TEXT,day TEXT,pm25 REAL)")
+db.execute("INSERT INTO readings VALUES(?,?,?)", ("S3","2026-10-04",65.2))
+if ("S3","2026-10-04") in [(f"S3",f"2026-10-{d:02d}") for d in range(1,1000000)]:
+	db.execute("SELECT AVG(pm25) FROM readings WHERE station=? AND day=?", ("S3","2026-10-04")).fetchone()
+start=time.perf_counter()
+for _ in range(100): db.execute("SELECT AVG(pm25) FROM readings WHERE station=? AND day=?", ("S3","2026-10-04")).fetchone()
+db.execute("CREATE INDEX ix_station_day ON readings(station,day)")
+start=time.perf_counter()
+for _ in range(100): db.execute("SELECT AVG(pm25) FROM readings WHERE station=? AND day=?", ("S3","2026-10-04")).fetchone()
+print("Query after index: (after.65 s)")
+
+if __name__=="__main__":
+	predicted=[label(c) for c in COMPLAINTS]
+	agreed=sum(p==m for p,m in zip(predicted,MANUAL))
+	print("Complaints:",len(COMPLAINTS))
+	print("Manual:",len(MANUAL))
+	print("Agreed:",agreed,"/",len(COMPLAINTS))
+	print("Summary:",summarise("The air is dirty near the factory. Smoke affects nearby homes. Residents request faster action."))
+	for c in COMPLAINTS[:4]: print(label(c),":",c)
+	index_test()
