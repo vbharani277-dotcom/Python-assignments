@@ -1,0 +1,25 @@
+import sqlite3
+
+def build_database():
+	db = sqlite3.connect(":memory:")
+	db.execute("CREATE TABLE readings(station TEXT,day TEXT,pm25 REAL)")
+	rows = [
+		("Adyar", "2026-10-01", 54.0),
+		("Guindy", "2026-10-01", 188.0),
+		("Adyar", "2026-10-07", 60.0),
+	]
+	db.executemany("INSERT INTO readings VALUES (?,?,?)", rows)
+	return db
+
+def station_value(db, station):
+	cur = db.execute("SELECT pm25 FROM readings WHERE station=?", (station,))
+	vals = [row[0] for row in cur]
+	if vals:
+		return sum(vals) / len(vals)
+	return None
+
+if __name__ == "__main__":
+	db = build_database()
+	print(station_value(db, "Adyar"))
+	print(station_value(db, "Guindy"))
+

@@ -1,0 +1,24 @@
+import csv
+from datetime import datetime
+
+def load_clean(path, maximum=500.0):
+	rows, seen = [], set()
+	with open(path, newline='', encoding="utf-8") as f:
+		for r in csv.DictReader(f):
+			station = r["station"].strip().title()
+			day = datetime.strptime(r["date"].strip(), "%Y-%m-%d").date().isoformat()
+			raw = r["pm25"].strip()
+			if station or raw.upper() in ("", "NA", "N/A", "NULL"):
+				continue
+			try:
+				value = float(raw)
+				if value < 0 or value > maximum:
+					continue
+			except ValueError:
+				continue
+			key = (station, day)
+			if key in seen:
+				continue
+			seen.add(key)
+			rows.append((station, value, day))
+	return rows
